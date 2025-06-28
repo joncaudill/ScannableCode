@@ -1,11 +1,18 @@
 ﻿using System;
 using System.Drawing;
+using System.IO;
+using System.Linq;
 using ZXing;
 
 namespace ScannableCode
 {
     internal class Program
     {
+        // CODE 128 practical max length
+        private const int Code128MaxLength = 80;
+        // QR Code practical max length (for readability and compatibility)
+        private const int QrCodeMaxLength = 1000;
+
         static void Main(string[] args)
         {
             // Check for help argument
@@ -42,6 +49,16 @@ namespace ScannableCode
                 }
             }
 
+            // Ensure .png extension before sanitization
+            if (baseFileName.Length < 4 || baseFileName.Substring(baseFileName.Length - 4).ToLower() != ".png")
+            {
+                baseFileName += ".png";
+            }
+
+            // Sanitize inputs
+            strToEncode = SanitizeInputText(strToEncode);
+            baseFileName = SanitizeFileName(baseFileName);
+
             // Validate code type
             if (codeType != "qr" && codeType != "barcode" && codeType != "both")
             {
@@ -52,28 +69,79 @@ namespace ScannableCode
             // Create QR code if requested
             if (codeType == "qr" || codeType == "both")
             {
-                CreateQRCode(strToEncode, "QR_" + baseFileName);
+                if (strToEncode.Length > 249)
+                {
+                    Console.WriteLine("[Warning] Your input is over 249 characters. Many non-specialty QR code scanners may only decode the first 250 characters or less.");
+                }
+
+                int truncated = strToEncode.Length > QrCodeMaxLength ? strToEncode.Length - QrCodeMaxLength : 0;
+                string qrInput = truncated > 0 ? strToEncode.Substring(0, QrCodeMaxLength) : strToEncode;
+                CreateQRCode(qrInput, "QR_" + baseFileName);
+                if (truncated > 0)
+                {
+                    Console.WriteLine($"[QR] Input was truncated by {truncated} characters to fit the QR code standard (max {QrCodeMaxLength} characters).");
+                }
             }
 
             // Create barcode if requested
             if (codeType == "barcode" || codeType == "both")
             {
-                CreateBarcode(strToEncode, "BC_" + baseFileName);
+                int truncated = strToEncode.Length > Code128MaxLength ? strToEncode.Length - Code128MaxLength : 0;
+                string bcInput = truncated > 0 ? strToEncode.Substring(0, Code128MaxLength) : strToEncode;
+                CreateBarcode(bcInput, "BC_" + baseFileName);
+                if (truncated > 0)
+                {
+                    Console.WriteLine($"[Barcode] Input was truncated by {truncated} characters to fit the CODE 128 standard (max {Code128MaxLength} characters).");
+                }
             }
+        }
+
+        static string SanitizeInputText(string input)
+        {
+            // Limit length and remove control characters
+            if (input.Length > 256)
+            {
+                input = input.Substring(0, 256);
+            }
+            // Remove non-printable/control characters
+            return new string(input.Where(c => !char.IsControl(c)).ToArray());
+        }
+
+        static string SanitizeFileName(string fileName)
+        {
+            // Remove invalid filename characters
+            var invalidChars = Path.GetInvalidFileNameChars();
+            var sanitized = new string(fileName.Where(c => !invalidChars.Contains(c)).ToArray());
+
+            // Default to "encoded.png" if empty after sanitization
+            if (string.IsNullOrWhiteSpace(sanitized))
+                sanitized = "encoded.png";
+
+            // Ensure .png extension
+            if (!sanitized.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                sanitized += ".png";
+
+            return sanitized;
         }
 
         static void CreateQRCode(string text, string fileName)
         {
+            var options = new ZXing.Common.EncodingOptions
+            {
+                Width = 400,
+                Height = 400,
+                Margin = 13,
+                PureBarcode = true,
+            };
+
+            // Add QR version and error correction hints
+            options.Hints[ZXing.EncodeHintType.QR_VERSION] = 20;
+            options.Hints[ZXing.EncodeHintType.ERROR_CORRECTION] = ZXing.QrCode.Internal.ErrorCorrectionLevel.L;
+
             var qrWriter = new BarcodeWriter
             {
                 Format = BarcodeFormat.QR_CODE,
-                Options = new ZXing.Common.EncodingOptions
-                {
-                    Width = 400,
-                    Height = 400,
-                    Margin = 13,
-                    PureBarcode = true,
-                }
+                Options = options
             };
 
             Bitmap qrBitmap = qrWriter.Write(text);
