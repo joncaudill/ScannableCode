@@ -24,7 +24,8 @@ namespace ScannableCode
                 {
                     Width = 400,
                     Height = 125,
-                    Margin = 13
+                    Margin = 13,
+                    PureBarcode = true,
                 }
             };
 
